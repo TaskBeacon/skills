@@ -1,0 +1,121 @@
+﻿task_plot_spec:
+  spec_version: "0.2"
+  meta:
+    task_name: "Timeline Collection Template"
+    mode: "existing"
+  figure:
+    output:
+      filename: "task_flow.png"
+      dpi: 300
+      width_in: 16.0
+      background: "white"
+    layout:
+      max_conditions: 3
+      screens_per_timeline: 5
+      screen_overlap_ratio: 0.05
+      screen_slope: 0.08
+      screen_slope_deg: 25.0
+      timeline_gap: 0.18
+      screen_aspect_ratio: 1.4545
+      left_margin: 0.2
+      right_margin: 0.03
+      top_margin: 0.03
+      bottom_margin: 0.05
+      condition_label_gap: 0.014
+      phase_label_pad: 0.01
+      duration_label_gap: 0.006
+      timeline_arrow_gap: 0.01
+      timeline_arrow_screen_clearance: 0.007
+      timeline_arrow_text_clearance: 0.01
+      timeline_arrow_extra_per_screen: 0.015
+      timeline_arrow_min_y: 0.02
+      timeline_arrow_max_y: 0.96
+  timelines:
+    - condition: "go_left"
+      display_condition_label: "Go Left"
+      display_condition_note: "Typical Go Trial"
+      phases:
+        - phase_name: "fixation"
+          display_phase_label: "Fixation"
+          duration_ms:
+            range: [800, 1000]
+          response_window_ms: null
+          display_timing_label: "800-1000 ms"
+          stim_ids: ["fixation"]
+          stimulus_example:
+            summary: "+"
+            modality: "visual"
+            draw_hint: "text"
+          notes: ""
+        - phase_name: "go_response_window"
+          display_phase_label: "GO"
+          duration_ms:
+            fixed: 1000
+          response_window_ms:
+            fixed: 1000
+          display_timing_label: "1000 ms"
+          stim_ids: ["go_left"]
+          stimulus_example:
+            summary: "[shape:go_left]"
+            modality: "visual"
+            draw_hint: "shape"
+          notes: "response enabled"
+        - phase_name: "inter_trial_interval"
+          display_phase_label: "ITI"
+          duration_ms:
+            fixed: 1000
+          response_window_ms: null
+          display_timing_label: "1000 ms"
+          stim_ids: ["fixation"]
+          stimulus_example:
+            summary: "+"
+            modality: "visual"
+            draw_hint: "text"
+          notes: ""
+    - condition: "stop_left"
+      display_condition_label: "Stop Left"
+      display_condition_note: "Typical Stop Trial"
+      phases:
+        - phase_name: "fixation"
+          display_phase_label: "Fixation"
+          duration_ms:
+            range: [800, 1000]
+          response_window_ms: null
+          display_timing_label: "800-1000 ms"
+          stim_ids: ["fixation"]
+          stimulus_example:
+            summary: "+"
+            modality: "visual"
+            draw_hint: "text"
+          notes: ""
+        - phase_name: "pre_stop_go_window"
+          display_phase_label: "GO"
+          duration_ms:
+            range: [50, 500]
+          response_window_ms:
+            range: [50, 500]
+          display_timing_label: "50-500 ms"
+          stim_ids: ["go_left"]
+          stimulus_example:
+            summary: "[shape:go_left]"
+            modality: "visual"
+            draw_hint: "shape"
+          notes: "SSD"
+        - phase_name: "stop_signal_window"
+          display_phase_label: "Stop Signal"
+          duration_ms:
+            range: [500, 950]
+          response_window_ms:
+            range: [500, 950]
+          display_timing_label: "500-950 ms"
+          stim_ids: ["stop_left"]
+          stimulus_example:
+            summary: "[shape:stop_left]"
+            modality: "visual"
+            draw_hint: "shape"
+          notes: "withhold"
+  legend:
+    - key: "[audio:*]"
+      meaning: "audio/non-visual stimulus"
+    - key: "[dynamic:*]"
+      meaning: "runtime-selected stimulus"

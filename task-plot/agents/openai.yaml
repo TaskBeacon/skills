@@ -1,0 +1,4 @@
+interface:
+  display_name: "Task Plot"
+  short_description: "Render deterministic cognitive task illustrations"
+  default_prompt: "Use $task-plot to infer one-condition-per-timeline task flow from run_trial/config/source and render <task>/task_flow.png with auditable references artifacts."
