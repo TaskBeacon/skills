@@ -32,6 +32,14 @@ Language/font default policy:
 
 ## Workflow
 
+### Phase -1: Environment Warm-Up (Mandatory on a New Machine)
+
+1. Run preflight checks:
+   - `python scripts/preflight_env.py`
+2. If required modules are missing, install them:
+   - `python scripts/preflight_env.py --install-missing --psyflow-source <path-to-psyflow-checkout>`
+3. Continue only after preflight reports `PASS`.
+
 ### Phase 0: Paradigm Logic Audit (Mandatory Before Coding)
 
 1. Create `references/task_logic_audit.md` before editing task code.
@@ -247,6 +255,10 @@ Apply these cross-task lessons by default:
 ## Command Quick Start
 
 ```powershell
+# 0) Warm up environment (check / optional install)
+python scripts/preflight_env.py
+python scripts/preflight_env.py --install-missing --psyflow-source e:\Taskbeacon\psyflow
+
 # 1) Select papers
 python scripts/select_papers.py --task-name "monetary incentive delay" --task-path e:\Taskbeacon\T000006-mid --acquisition eeg
 
