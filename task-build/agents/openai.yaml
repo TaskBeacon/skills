@@ -1,0 +1,4 @@
+interface:
+  display_name: "Task Build"
+  short_description: "Build reference-backed psyflow tasks end-to-end (no placeholders)"
+  default_prompt: "Use $task-build to create or refactor a cognitive task from literature to validated psyflow standards with strict reference-aligned stimulus implementation."

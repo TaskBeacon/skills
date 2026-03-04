@@ -1,0 +1,56 @@
+﻿# QA config (dev + qa only)
+subinfo_fields: []
+subinfo_mapping: {}
+
+window:
+  size: [1920, 1080]
+  units: deg
+  screen: 1
+  bg_color: black
+  fullscreen: true
+  monitor_width_cm: 60
+  monitor_distance_cm: 72
+
+task:
+  task_name: {{TASK_NAME}}
+  save_path: ./outputs/qa
+  language: Chinese
+  voice_name: zh-CN-YunyangNeural
+  voice_enabled: false
+  total_blocks: 1
+  total_trials: 1
+  trial_per_block: 1
+  conditions: [default]
+  key_list: [space]
+  delta: 0.0
+  seed_mode: same_across_sub
+
+stimuli: {}
+
+timing: {}
+
+triggers:
+  map: {}
+  driver:
+    type: serial_url
+    url: loop://
+    baudrate: 115200
+    timeout: 1
+    prefix: [1, 225, 1, 0]
+  policy:
+    strict: false
+  timing:
+    post_delay_s: 0.001
+
+qa:
+  output_dir: outputs/qa
+  enable_scaling: true
+  timing_scale: 0.2
+  min_frames: 1
+  strict: false
+  max_wait_s: 10.0
+  acceptance_criteria:
+    required_columns: [condition]
+    expected_trial_count: 1
+    allowed_keys: [space]
+    triggers_required: true

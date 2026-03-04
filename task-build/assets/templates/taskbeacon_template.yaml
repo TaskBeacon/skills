@@ -1,0 +1,13 @@
+﻿id: {{TASK_ID}}
+slug: {{TASK_SLUG}}
+title: "{{TASK_TITLE}}"
+acquisition: {{ACQUISITION}}
+variant: {{VARIANT}}
+cognitive_domain: []
+maturity: draft
+version:
+  release_tag: ""
+contracts:
+  psyflow_taps: {{CONTRACT_VERSION}}
+evidence: []
+maintainer: []

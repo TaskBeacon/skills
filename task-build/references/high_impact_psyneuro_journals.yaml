@@ -1,0 +1,45 @@
+﻿version: 1
+updated: "2026-02-17"
+description: "Curated high-impact psychology/neuroscience journals used by task-build filtering."
+
+journals:
+  - name: "Nature"
+    aliases: ["Nature"]
+  - name: "Science"
+    aliases: ["Science"]
+  - name: "Nature Neuroscience"
+    aliases: ["Nat Neurosci", "Nature Neuroscience"]
+  - name: "Nature Human Behaviour"
+    aliases: ["Nature Human Behaviour", "Nat Hum Behav"]
+  - name: "Nature Reviews Neuroscience"
+    aliases: ["Nat Rev Neurosci", "Nature Reviews Neuroscience"]
+  - name: "Neuron"
+    aliases: ["Neuron"]
+  - name: "Biological Psychiatry"
+    aliases: ["Biological Psychiatry"]
+  - name: "Molecular Psychiatry"
+    aliases: ["Molecular Psychiatry"]
+  - name: "American Journal of Psychiatry"
+    aliases: ["Am J Psychiatry", "American Journal of Psychiatry"]
+  - name: "JAMA Psychiatry"
+    aliases: ["JAMA Psychiatry", "Archives of General Psychiatry"]
+  - name: "Psychological Science"
+    aliases: ["Psychological Science"]
+  - name: "Journal of Experimental Psychology: General"
+    aliases: ["J Exp Psychol Gen", "Journal of Experimental Psychology: General"]
+  - name: "Journal of Experimental Psychology: Human Perception and Performance"
+    aliases: ["J Exp Psychol Hum Percept Perform"]
+  - name: "Journal of Cognitive Neuroscience"
+    aliases: ["Journal of Cognitive Neuroscience", "J Cogn Neurosci"]
+  - name: "Cerebral Cortex"
+    aliases: ["Cerebral Cortex"]
+  - name: "NeuroImage"
+    aliases: ["NeuroImage"]
+  - name: "Neuropsychopharmacology"
+    aliases: ["Neuropsychopharmacology"]
+  - name: "Brain"
+    aliases: ["Brain"]
+  - name: "eLife"
+    aliases: ["eLife", "Elife"]
+  - name: "Proceedings of the National Academy of Sciences"
+    aliases: ["PNAS", "Proc Natl Acad Sci U S A"]
