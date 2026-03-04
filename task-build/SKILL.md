@@ -30,6 +30,16 @@ Language/font default policy:
 - If `language=Chinese`, set participant-facing text stimuli to `font: SimHei`.
 - For non-Chinese languages, choose a readable font with strong glyph coverage for that language/script.
 
+Input-mode routing:
+
+- `Mode A: literature-first` (default)
+  - Use when the user asks to build a task but does not provide a concrete paper/method source.
+  - Run full literature discovery and selection policy first.
+- `Mode B: provided-source-first`
+  - Use when the user provides a paper URL, PDF, or explicit methods description and asks to build from that source.
+  - Treat the provided source as primary protocol evidence.
+  - Fill missing protocol details with supporting literature and mark unresolved values as `inferred`.
+
 ## Workflow
 
 ### Phase -1: Environment Warm-Up (Mandatory on a New Machine)
@@ -57,7 +67,7 @@ Language/font default policy:
 4. For every screen with multiple concurrent options/stimuli, define an explicit layout plan (`pos`, spacing, alignment, visual hierarchy) before implementation.
 5. **Stop implementation** if any trial phase is still represented only by template text, abstract condition labels, or if the logic is being "imported" from an unrelated task (e.g., using MID's Cue-Anticipation-Target structure for a choice-based task).
 
-### Phase 1: Discover and Filter Literature
+### Phase 1A (Mode A): Discover and Filter Literature
 
 1. Run `scripts/select_papers.py` with task keywords and acquisition modality.
 2. Enforce all filter rules:
@@ -66,6 +76,18 @@ Language/font default policy:
    - at least one paper from `references/high_impact_psyneuro_journals.yaml`
    - at least three selected papers
 3. Stop with an explicit blocker if constraints are not satisfied.
+
+### Phase 1B (Mode B): Register Provided Source and Add Supporting Literature
+
+1. Register the provided protocol source:
+   - `python scripts/register_provided_source.py --task-path <task_path> --paper-url <url>`
+   - or `--paper-pdf <path>`
+   - or `--methods-file <path>` / `--methods-text "..."`
+2. If protocol details are incomplete, collect supporting literature via `scripts/select_papers.py`.
+3. Compose the selected bundle with the provided source as primary:
+   - `python scripts/compose_selected_from_provided.py --task-path <task_path>`
+   - optional: `--supplement-json <selected_papers_from_lit.json>`
+4. Continue to Phase 2 using the composed `references/selected_papers.json`.
 
 ### Phase 2: Build Evidence Artifacts
 
@@ -259,6 +281,7 @@ Apply these cross-task lessons by default:
 python scripts/preflight_env.py
 python scripts/preflight_env.py --install-missing --psyflow-source e:\Taskbeacon\psyflow
 
+# Mode A (default): literature-first
 # 1) Select papers
 python scripts/select_papers.py --task-name "monetary incentive delay" --task-path e:\Taskbeacon\T000006-mid --acquisition eeg
 
@@ -273,6 +296,23 @@ python scripts/run_gates.py --task-path e:\Taskbeacon\T000006-mid --max-retries 
 
 # 5) Publish
 python scripts/publish_task.py --task-path e:\Taskbeacon\T000006-mid
+
+# Mode B: provided-source-first (URL/PDF/method text)
+# B1) Register user-provided source
+python scripts/register_provided_source.py --task-path e:\Taskbeacon\T000006-mid --paper-url "https://..."
+# or
+python scripts/register_provided_source.py --task-path e:\Taskbeacon\T000006-mid --paper-pdf e:\papers\protocol.pdf
+# or
+python scripts/register_provided_source.py --task-path e:\Taskbeacon\T000006-mid --methods-file e:\papers\methods.md
+
+# B2) Optional: gather supporting literature for missing details
+python scripts/select_papers.py --task-name "monetary incentive delay" --task-path e:\Taskbeacon\T000006-mid --acquisition eeg
+
+# B3) Compose selected papers (provided primary + optional supports)
+python scripts/compose_selected_from_provided.py --task-path e:\Taskbeacon\T000006-mid
+
+# B4) Build reference artifacts from composed selected papers
+python scripts/build_reference_bundle.py --task-path e:\Taskbeacon\T000006-mid --selection-policy provided_source_plus_supporting_literature
 ```
 
 ## References to Load on Demand

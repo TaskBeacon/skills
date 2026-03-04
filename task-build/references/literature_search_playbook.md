@@ -11,6 +11,9 @@ Produce a filtered paper set with:
 - all selected papers open access
 - all selected papers citation count >= 100
 
+If a primary paper/method is already provided by the user (PDF/URL/method text), treat this playbook as a
+supporting-literature step for filling missing implementation details rather than replacing the provided source.
+
 ## Query Construction
 
 Build search with three parts:
