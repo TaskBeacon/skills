@@ -1352,7 +1352,10 @@ def _collapse_similar_timelines(
         variants = [str(t.get("condition", "")).strip() for t in members[1:] if str(t.get("condition", "")).strip()]
         if variants:
             rep["condition_variants"] = variants
-            rep["display_condition_note"] = "Also: " + ", ".join(_display_condition_label(v) for v in variants)
+            note = "Also: " + ", ".join(_display_condition_label(v) for v in variants)
+            if len(note) > 120:
+                note = note[:119] + "…"
+            rep["display_condition_note"] = note
             all_names = [str(rep.get("condition", ""))] + variants
             inferred_items.append("collapsed equivalent condition logic into representative timeline: " + ", ".join(all_names))
         collapsed.append(rep)
