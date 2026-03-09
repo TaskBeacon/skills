@@ -96,4 +96,7 @@ task_plot_spec:
 - Every phase should include duration and response window when inferable.
 - Duration labels are rendered as black text on transparent background and must clear all screen rectangles.
 - Timeline arrow is rendered parallel to the screen cascade (using first/last screen anchor geometry) and offset downward.
-- For non-visual/dynamic stimuli, use annotation text examples.
+- Screen content should show the exact sample participant-visible stimulus whenever config/runtime evidence is sufficient.
+- Abstract internal labels or condition/debug tokens must not be used as the screen content when the actual stimulus can be resolved.
+- If a participant-visible phase is inferred from `show()` because `set_trial_context(...)` is missing, the plot audit must emit an explicit warning.
+- For non-visual/dynamic stimuli, use annotation text examples only when a visual sample is genuinely unavailable.

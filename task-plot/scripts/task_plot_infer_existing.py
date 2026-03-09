@@ -37,6 +37,17 @@ class CaptureTemplate:
     predicate_labels: list[str]
 
 
+@dataclass
+class VisibleShowTemplate:
+    order: int
+    unit_var: str
+    unit_label_expr: str
+    duration_expr: str
+    stim_exprs: list[str]
+    predicates: list[Predicate]
+    predicate_labels: list[str]
+
+
 def infer_from_existing_task(task_path: str | Path) -> dict[str, Any]:
     task_dir = Path(task_path).resolve()
     readme_path = task_dir / "README.md"
@@ -68,6 +79,7 @@ def infer_from_existing_task(task_path: str | Path) -> dict[str, Any]:
     extraction = _extract_phase_templates(run_trial_tree)
     phase_templates = extraction["phases"]
     capture_templates = extraction["captures"]
+    visible_show_templates = extraction["visible_shows"]
     unit_stim_calls = extraction["unit_stims"]
     var_exprs = extraction["var_exprs"]
     unresolved_predicates = extraction["unresolved_predicates"]
@@ -81,9 +93,10 @@ def infer_from_existing_task(task_path: str | Path) -> dict[str, Any]:
     timelines = []
     config_evidence: list[str] = []
     inferred_items: list[str] = []
+    warning_items: list[str] = []
 
     for condition in selected_conditions:
-        phases = []
+        phase_rows: list[tuple[int, dict[str, Any]]] = []
         for template in sorted(phase_templates, key=lambda p: p.order):
             if not _matches_predicates(condition, template.predicates):
                 continue
@@ -115,28 +128,37 @@ def infer_from_existing_task(task_path: str | Path) -> dict[str, Any]:
                 var_exprs=var_exprs,
             )
             if not stim_ids:
-                stim_ids = _resolve_stim_ids_from_calls(unit_stim_calls.get(template.unit_var, []), condition)
+                stim_ids = _resolve_stim_ids_from_calls(
+                    unit_stim_calls.get(template.unit_var, []),
+                    condition,
+                    stimuli_cfg=stimuli_cfg,
+                    var_exprs=var_exprs,
+                )
 
             stim_example = _build_stimulus_example(
                 stim_ids=stim_ids,
                 condition=condition,
                 phase_name=phase_name,
                 stimuli_cfg=stimuli_cfg,
+                task_dir=task_dir,
             )
             if not stim_ids:
                 inferred_items.append(f"{condition}:{phase_name}:stimulus unresolved, used textual fallback")
 
-            phases.append(
-                {
-                    "phase_name": phase_name,
-                    "display_phase_label": _display_phase_label(phase_name),
-                    "duration_ms": duration_ms,
-                    "response_window_ms": response_window_ms,
-                    "display_timing_label": _display_timing_label(duration_ms, response_window_ms),
-                    "stim_ids": stim_ids,
-                    "stimulus_example": stim_example,
-                    "notes": _combine_notes(template.predicate_labels, capture.predicate_labels if capture else []),
-                }
+            phase_rows.append(
+                (
+                    template.order,
+                    {
+                        "phase_name": phase_name,
+                        "display_phase_label": _display_phase_label(phase_name),
+                        "duration_ms": duration_ms,
+                        "response_window_ms": response_window_ms,
+                        "display_timing_label": _display_timing_label(duration_ms, response_window_ms),
+                        "stim_ids": stim_ids,
+                        "stimulus_example": stim_example,
+                        "notes": _combine_notes(template.predicate_labels, capture.predicate_labels if capture else []),
+                    },
+                )
             )
 
             config_evidence.append(
@@ -144,6 +166,73 @@ def infer_from_existing_task(task_path: str | Path) -> dict[str, Any]:
                 f"response_expr={capture.duration_expr if capture else 'n/a'}, stim_expr={template.stim_id_expr}"
             )
 
+        for show in sorted(visible_show_templates, key=lambda s: s.order):
+            if not _matches_predicates(condition, show.predicates):
+                continue
+            if _visible_show_has_context(show, condition, phase_templates):
+                continue
+
+            phase_name = _phase_name_from_visible_show(
+                show,
+                condition=condition,
+                stimuli_cfg=stimuli_cfg,
+                var_exprs=var_exprs,
+            )
+            duration_ms, duration_note = _resolve_duration(
+                show.duration_expr,
+                settings_values=settings_values,
+                var_exprs=var_exprs,
+            )
+            if duration_note:
+                inferred_items.append(f"{condition}:{phase_name}:{duration_note}")
+
+            stim_ids = _resolve_stim_ids_from_calls(
+                show.stim_exprs,
+                condition,
+                stimuli_cfg=stimuli_cfg,
+                var_exprs=var_exprs,
+            )
+            stim_example = _build_stimulus_example(
+                stim_ids=stim_ids,
+                condition=condition,
+                phase_name=phase_name,
+                stimuli_cfg=stimuli_cfg,
+                task_dir=task_dir,
+            )
+            if not stim_ids:
+                inferred_items.append(f"{condition}:{phase_name}:stimulus unresolved, used textual fallback")
+
+            warning = (
+                f"{condition}:{phase_name}: participant-visible phase inferred from show() "
+                "because set_trial_context(...) is missing"
+            )
+            warning_items.append(warning)
+            config_evidence.append(
+                f"{condition}: visible_show_without_context phase={phase_name}, "
+                f"unit_label_expr={show.unit_label_expr or '(none)'}, duration_expr={show.duration_expr or '(none)'}, "
+                f"stim_exprs={show.stim_exprs or []}"
+            )
+            phase_rows.append(
+                (
+                    show.order,
+                    {
+                        "phase_name": phase_name,
+                        "display_phase_label": _display_phase_label(phase_name),
+                        "duration_ms": duration_ms,
+                        "response_window_ms": None,
+                        "display_timing_label": _display_timing_label(duration_ms, None),
+                        "stim_ids": stim_ids,
+                        "stimulus_example": stim_example,
+                        "notes": _combine_notes(
+                            show.predicate_labels,
+                            ["inferred from show() without set_trial_context"],
+                        ),
+                    },
+                )
+            )
+
+        phase_rows.sort(key=lambda item: item[0])
+        phases = [row[1] for row in phase_rows]
         screens_cap = layout_defaults["screens_per_timeline"]
         if len(phases) > screens_cap:
             phases = phases[:screens_cap]
@@ -216,11 +305,13 @@ def infer_from_existing_task(task_path: str | Path) -> dict[str, Any]:
             "mapping": [
                 "timeline collection: one representative timeline per unique trial logic",
                 "phase flow inferred from run_trial set_trial_context order and branch predicates",
+                "participant-visible show() phases without set_trial_context are inferred where possible and warned",
                 "duration/response inferred from deadline/capture expressions",
                 "stimulus examples inferred from stim_id + config stimuli",
                 "conditions with equivalent phase/timing logic collapsed and annotated as variants",
             ],
             "inferred_items": _dedupe(inferred_items),
+            "warnings": _dedupe(warning_items),
             "style_rationale": (
                 "Single timeline-collection view selected by policy: one representative condition per unique timeline logic."
             ),
@@ -303,7 +394,9 @@ def _extract_phase_templates(tree: ast.AST) -> dict[str, Any]:
 
     phases: list[PhaseTemplate] = []
     captures: list[CaptureTemplate] = []
+    visible_shows: list[VisibleShowTemplate] = []
     unit_stims: dict[str, list[str]] = {}
+    unit_labels: dict[str, str] = {}
     var_exprs: dict[str, str] = {}
     unresolved_predicates: list[str] = []
     order = 0
@@ -311,7 +404,7 @@ def _extract_phase_templates(tree: ast.AST) -> dict[str, Any]:
     def traverse(stmts: list[ast.stmt], predicates: list[Predicate], labels: list[str]) -> None:
         nonlocal order
         for stmt in stmts:
-            _collect_var_assign(stmt, var_exprs)
+            _collect_var_assign(stmt, var_exprs, unit_labels)
             _collect_unit_stims(stmt, unit_stims)
 
             if isinstance(stmt, ast.If):
@@ -374,19 +467,31 @@ def _extract_phase_templates(tree: ast.AST) -> dict[str, Any]:
                         predicate_labels=list(labels),
                     )
                 )
+            elif _is_attr_call(call, "show"):
+                visible = _extract_visible_show_template(
+                    call,
+                    order=order,
+                    predicates=predicates,
+                    labels=labels,
+                    unit_stims=unit_stims,
+                    unit_labels=unit_labels,
+                )
+                if visible is not None:
+                    visible_shows.append(visible)
 
     traverse(run_trial_fn.body, [], [])
 
     return {
         "phases": phases,
         "captures": captures,
+        "visible_shows": visible_shows,
         "unit_stims": unit_stims,
         "var_exprs": var_exprs,
         "unresolved_predicates": unresolved_predicates,
     }
 
 
-def _collect_var_assign(stmt: ast.stmt, var_exprs: dict[str, str]) -> None:
+def _collect_var_assign(stmt: ast.stmt, var_exprs: dict[str, str], unit_labels: dict[str, str]) -> None:
     if not isinstance(stmt, ast.Assign):
         return
     if len(stmt.targets) != 1 or not isinstance(stmt.targets[0], ast.Name):
@@ -394,6 +499,9 @@ def _collect_var_assign(stmt: ast.stmt, var_exprs: dict[str, str]) -> None:
     target = stmt.targets[0].id
     expr = _unparse(stmt.value)
     var_exprs[target] = expr
+    unit_label_expr = _extract_unit_label_expr_from_chain(stmt.value)
+    if unit_label_expr:
+        unit_labels[target] = unit_label_expr
 
 
 def _collect_unit_stims(stmt: ast.stmt, unit_stims: dict[str, list[str]]) -> None:
@@ -428,6 +536,58 @@ def _extract_add_stim_exprs(node: ast.AST) -> list[str]:
             break
     out.reverse()
     return out
+
+
+def _extract_unit_label_expr_from_chain(node: ast.AST) -> str:
+    current = node
+    while isinstance(current, ast.Call):
+        if isinstance(current.func, ast.Name) and current.func.id in {"make_unit", "StimUnit"}:
+            kw = _kw_expr(current, "unit_label")
+            if kw:
+                return kw
+            if current.args:
+                return _unparse(current.args[0])
+            return ""
+        if isinstance(current.func, ast.Attribute):
+            current = current.func.value
+            continue
+        break
+    return ""
+
+
+def _extract_visible_show_template(
+    call: ast.Call,
+    order: int,
+    predicates: list[Predicate],
+    labels: list[str],
+    unit_stims: dict[str, list[str]],
+    unit_labels: dict[str, str],
+) -> VisibleShowTemplate | None:
+    if not isinstance(call.func, ast.Attribute) or call.func.attr != "show":
+        return None
+    base = call.func.value
+    unit_var = _name_of_node(base)
+    stim_exprs = []
+    if unit_var:
+        stim_exprs.extend(unit_stims.get(unit_var, []))
+    chain_exprs = _extract_add_stim_exprs(base)
+    for expr in chain_exprs:
+        if expr not in stim_exprs:
+            stim_exprs.append(expr)
+    if not stim_exprs:
+        return None
+    unit_label_expr = _extract_unit_label_expr_from_chain(base)
+    if not unit_label_expr and unit_var:
+        unit_label_expr = unit_labels.get(unit_var, "")
+    return VisibleShowTemplate(
+        order=order,
+        unit_var=unit_var,
+        unit_label_expr=unit_label_expr,
+        duration_expr=_kw_expr(call, "duration"),
+        stim_exprs=stim_exprs,
+        predicates=list(predicates),
+        predicate_labels=list(labels),
+    )
 
 
 def _extract_call(stmt: ast.stmt) -> ast.Call | None:
@@ -669,6 +829,129 @@ def _num_to_ms(value: float) -> int:
     return int(round(value))
 
 
+def _eval_expr_value(
+    expr: str,
+    condition: str,
+    var_exprs: dict[str, str],
+    *,
+    depth: int = 0,
+) -> Any | None:
+    if depth > 8:
+        return None
+    expr = (expr or "").strip()
+    if not expr:
+        return None
+    try:
+        node = ast.parse(expr, mode="eval").body
+    except SyntaxError:
+        return None
+    return _eval_expr_node(node, condition=condition, var_exprs=var_exprs, depth=depth)
+
+
+def _eval_expr_node(
+    node: ast.AST,
+    condition: str,
+    var_exprs: dict[str, str],
+    *,
+    depth: int,
+) -> Any | None:
+    if depth > 8:
+        return None
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.Name):
+        if node.id == "condition":
+            return condition
+        if node.id in var_exprs:
+            return _eval_expr_value(var_exprs[node.id], condition, var_exprs, depth=depth + 1)
+        return None
+    if isinstance(node, ast.JoinedStr):
+        parts: list[str] = []
+        for value in node.values:
+            resolved = _eval_expr_node(value, condition, var_exprs, depth=depth + 1)
+            if resolved is None:
+                return None
+            parts.append(str(resolved))
+        return "".join(parts)
+    if isinstance(node, ast.FormattedValue):
+        resolved = _eval_expr_node(node.value, condition, var_exprs, depth=depth + 1)
+        return None if resolved is None else str(resolved)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _eval_expr_node(node.left, condition, var_exprs, depth=depth + 1)
+        right = _eval_expr_node(node.right, condition, var_exprs, depth=depth + 1)
+        if left is None or right is None:
+            return None
+        if isinstance(left, (list, tuple)) or isinstance(right, (list, tuple)):
+            return None
+        return f"{left}{right}"
+    if isinstance(node, ast.Call):
+        if isinstance(node.func, ast.Name) and node.func.id == "str" and node.args:
+            resolved = _eval_expr_node(node.args[0], condition, var_exprs, depth=depth + 1)
+            return None if resolved is None else str(resolved)
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "replace" and node.args:
+            base = _eval_expr_node(node.func.value, condition, var_exprs, depth=depth + 1)
+            old = _eval_expr_node(node.args[0], condition, var_exprs, depth=depth + 1)
+            new = _eval_expr_node(node.args[1], condition, var_exprs, depth=depth + 1) if len(node.args) > 1 else ""
+            if isinstance(base, str) and isinstance(old, str) and isinstance(new, str):
+                return base.replace(old, new)
+        if isinstance(node.func, ast.Attribute) and node.func.attr in {"lower", "upper"}:
+            base = _eval_expr_node(node.func.value, condition, var_exprs, depth=depth + 1)
+            if isinstance(base, str):
+                return getattr(base, node.func.attr)()
+        return None
+    if isinstance(node, ast.Subscript):
+        base = _eval_expr_node(node.value, condition, var_exprs, depth=depth + 1)
+        if base is None:
+            return None
+        idx_node = node.slice
+        if isinstance(idx_node, ast.Index):  # pragma: no cover
+            idx_node = idx_node.value
+        idx = _eval_expr_node(idx_node, condition, var_exprs, depth=depth + 1)
+        try:
+            return base[idx]
+        except Exception:  # noqa: BLE001
+            return None
+    if isinstance(node, ast.Tuple):
+        vals = [_eval_expr_node(item, condition, var_exprs, depth=depth + 1) for item in node.elts]
+        return vals if all(v is not None for v in vals) else None
+    if isinstance(node, ast.List):
+        vals = [_eval_expr_node(item, condition, var_exprs, depth=depth + 1) for item in node.elts]
+        return vals if all(v is not None for v in vals) else None
+    if isinstance(node, ast.IfExp):
+        test = _eval_expr_node(node.test, condition, var_exprs, depth=depth + 1)
+        if isinstance(test, bool):
+            branch = node.body if test else node.orelse
+            return _eval_expr_node(branch, condition, var_exprs, depth=depth + 1)
+        return None
+    if isinstance(node, ast.Compare) and len(node.ops) == 1 and len(node.comparators) == 1:
+        left = _eval_expr_node(node.left, condition, var_exprs, depth=depth + 1)
+        right = _eval_expr_node(node.comparators[0], condition, var_exprs, depth=depth + 1)
+        if left is None or right is None:
+            return None
+        op = node.ops[0]
+        if isinstance(op, ast.Eq):
+            return left == right
+        if isinstance(op, ast.NotEq):
+            return left != right
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        value = _eval_expr_node(node.operand, condition, var_exprs, depth=depth + 1)
+        if isinstance(value, (int, float)):
+            return -value
+    return None
+
+
+def _strings_from_value(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return _split_compound_stim_id(value)
+    if isinstance(value, (list, tuple)):
+        out: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                out.extend(_split_compound_stim_id(item))
+        return out
+    return []
+
+
 def _resolve_stim_ids(
     expr: str,
     condition: str,
@@ -678,6 +961,10 @@ def _resolve_stim_ids(
     expr = (expr or "").strip()
     if not expr:
         return []
+
+    resolved = _strings_from_value(_eval_expr_value(expr, condition, var_exprs))
+    if resolved:
+        return _dedupe_preserve_order(resolved)
 
     if (expr.startswith("'") and expr.endswith("'")) or (expr.startswith('"') and expr.endswith('"')):
         token = expr[1:-1]
@@ -723,31 +1010,47 @@ def _split_compound_stim_id(token: str) -> list[str]:
     return parts if parts else [token.strip()]
 
 
-def _resolve_stim_ids_from_calls(stim_exprs: list[str], condition: str) -> list[str]:
+def _resolve_stim_ids_from_calls(
+    stim_exprs: list[str],
+    condition: str,
+    *,
+    stimuli_cfg: dict[str, Any],
+    var_exprs: dict[str, str],
+) -> list[str]:
     out = []
     for stim_expr in stim_exprs:
-        m = re.search(r'get(?:_and_format)?\(\s*"([^"]+)"', stim_expr)
-        if m:
-            out.append(m.group(1))
-            continue
-        if "condition.replace" in stim_expr:
-            m = re.search(
-                r"condition\.replace\(\s*['\"]([^'\"]+)['\"]\s*,\s*['\"]([^'\"]+)['\"]\s*\)",
-                stim_expr,
-            )
-            if m:
-                out.append(condition.replace(m.group(1), m.group(2)))
-                continue
-        if "condition" in stim_expr:
-            out.append(condition)
-    deduped = []
-    seen = set()
-    for item in out:
-        if item in seen:
-            continue
-        seen.add(item)
-        deduped.append(item)
-    return deduped
+        out.extend(_extract_stim_ids_from_call_expr(stim_expr, condition, stimuli_cfg=stimuli_cfg, var_exprs=var_exprs))
+    return _dedupe_preserve_order(out)
+
+
+def _extract_stim_ids_from_call_expr(
+    stim_expr: str,
+    condition: str,
+    *,
+    stimuli_cfg: dict[str, Any],
+    var_exprs: dict[str, str],
+) -> list[str]:
+    expr = (stim_expr or "").strip()
+    if not expr:
+        return []
+    try:
+        node = ast.parse(expr, mode="eval").body
+    except SyntaxError:
+        node = None
+    if isinstance(node, ast.Call):
+        func = node.func
+        if isinstance(func, ast.Attribute) and func.attr in {"get", "get_and_format", "rebuild"} and node.args:
+            value = _eval_expr_node(node.args[0], condition, var_exprs, depth=0)
+            strings = _strings_from_value(value)
+            if strings:
+                return _dedupe_preserve_order(strings)
+    out = _resolve_stim_ids(expr, condition=condition, stimuli_cfg=stimuli_cfg, var_exprs=var_exprs)
+    if out:
+        return out
+    m = re.search(r'get(?:_and_format|_and_rebuild|_or_none|)?\(\s*"([^"]+)"', expr)
+    if m:
+        return [m.group(1)]
+    return []
 
 
 def _build_stimulus_example(
@@ -755,6 +1058,7 @@ def _build_stimulus_example(
     condition: str,
     phase_name: str,
     stimuli_cfg: dict[str, Any],
+    task_dir: Path,
 ) -> dict[str, Any]:
     if not stim_ids:
         return {
@@ -808,10 +1112,17 @@ def _build_stimulus_example(
                 draw_hints.add("annotation")
                 render_items.append({"kind": "annotation", "text": f"Video: {stim_id}"})
             elif "image" in text_type:
-                parts.append(f"[image:{stim_id}]")
+                image_path = _resolve_stim_asset_path(task_dir, stim)
+                parts.append(_shorten(stim_id))
                 modalities.add("visual")
-                draw_hints.add("annotation")
-                render_items.append({"kind": "annotation", "text": f"Image: {stim_id}"})
+                draw_hints.add("image")
+                render_items.append(
+                    {
+                        "kind": "image_ref",
+                        "path": str(image_path) if image_path else "",
+                        "label": stim_id,
+                    }
+                )
             else:
                 parts.append(f"[{text_type or 'stim'}:{stim_id}]")
                 modalities.add("other")
@@ -832,6 +1143,19 @@ def _build_stimulus_example(
         "draw_hint": draw_hint,
         "render_items": render_items,
     }
+
+
+def _resolve_stim_asset_path(task_dir: Path, stim: dict[str, Any]) -> Path | None:
+    for key in ("image", "file", "filename", "path"):
+        value = stim.get(key)
+        if not isinstance(value, str) or not value.strip():
+            continue
+        path = Path(value.strip())
+        if not path.is_absolute():
+            path = (task_dir / path).resolve()
+        if path.exists():
+            return path
+    return None
 
 
 def _shape_token(stim_id: str, condition: str) -> dict[str, str]:
@@ -919,6 +1243,74 @@ def _fill_placeholder_text(raw: str, condition: str) -> str:
     line = raw.strip().splitlines()[0] if raw.strip() else ""
     line = re.sub(r"\{([A-Za-z0-9_:.%+-]+)\}", lambda m: sample_map.get(m.group(1).split(":")[0], "…"), line)
     return _shorten(line if line else "[text]")
+
+
+def _visible_show_has_context(
+    show: VisibleShowTemplate,
+    condition: str,
+    phase_templates: list[PhaseTemplate],
+) -> bool:
+    if not show.unit_var:
+        return False
+    for template in phase_templates:
+        if template.unit_var != show.unit_var:
+            continue
+        if _matches_predicates(condition, template.predicates):
+            return True
+    return False
+
+
+def _phase_name_from_visible_show(
+    show: VisibleShowTemplate,
+    *,
+    condition: str,
+    stimuli_cfg: dict[str, Any],
+    var_exprs: dict[str, str],
+) -> str:
+    unit_label = _eval_expr_value(show.unit_label_expr, condition, var_exprs)
+    if isinstance(unit_label, str) and unit_label.strip():
+        return _normalize_phase_seed(unit_label)
+    stim_ids = _resolve_stim_ids_from_calls(
+        show.stim_exprs,
+        condition,
+        stimuli_cfg=stimuli_cfg,
+        var_exprs=var_exprs,
+    )
+    if stim_ids:
+        return _phase_name_from_stim_ids(stim_ids)
+    if show.unit_var:
+        return _normalize_phase_seed(show.unit_var)
+    return "visible_phase"
+
+
+def _phase_name_from_stim_ids(stim_ids: list[str]) -> str:
+    if not stim_ids:
+        return "visible_phase"
+    preferred = next((sid for sid in stim_ids if "sound" not in sid.lower() and "audio" not in sid.lower()), stim_ids[0])
+    low = preferred.lower()
+    if low == "fixation":
+        return "fixation"
+    if low.startswith("cue_"):
+        return "cue"
+    if low.startswith("probe_"):
+        return "probe"
+    if low.endswith("_balloon"):
+        return "pump_decision"
+    if low.endswith("_pop"):
+        return "pop_outcome"
+    if low.endswith("_feedback"):
+        return "feedback"
+    if low.endswith("_screen"):
+        return _normalize_phase_seed(low.rsplit("_", 1)[0])
+    return _normalize_phase_seed(preferred)
+
+
+def _normalize_phase_seed(text: str) -> str:
+    raw = str(text or "").strip().strip("'\"")
+    raw = re.sub(r"[^A-Za-z0-9_ -]+", "_", raw)
+    raw = raw.replace("-", "_").replace(" ", "_")
+    raw = re.sub(r"_+", "_", raw).strip("_")
+    return raw.lower() or "visible_phase"
 
 
 def _shorten(text: str, n: int = 46) -> str:
@@ -1160,4 +1552,8 @@ def _dedupe(items: list[str]) -> list[str]:
         seen.add(item)
         out.append(item)
     return out
+
+
+def _dedupe_preserve_order(items: list[str]) -> list[str]:
+    return _dedupe(items)
 

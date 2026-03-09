@@ -467,10 +467,14 @@ def _draw_stimulus_content(ax: Any, x: float, y: float, w: float, h: float, phas
     text_lines: list[str] = []
     placed_text: list[dict[str, Any]] = []
     shape_item = None
+    image_item = None
     for item in render_items:
         if not isinstance(item, dict):
             continue
         kind = str(item.get("kind", "")).lower()
+        if kind == "image_ref" and image_item is None:
+            image_item = item
+            continue
         if kind == "shape" and shape_item is None:
             shape_item = item
             continue
@@ -481,6 +485,9 @@ def _draw_stimulus_content(ax: Any, x: float, y: float, w: float, h: float, phas
         if label:
             text_lines.extend(_expand_text_fragments(_cap_label(str(label))))
 
+    if image_item is not None:
+        _draw_image_ref(ax, x, y, w, h, image_item)
+
     if shape_item is not None:
         _draw_shape_icon(ax, x, y, w, h, shape_item)
 
@@ -489,6 +496,27 @@ def _draw_stimulus_content(ax: Any, x: float, y: float, w: float, h: float, phas
 
     if text_lines:
         _draw_text_lines(ax, x, y, w, h, text_lines[:4], color="#FFFFFF", size=7)
+
+
+def _draw_image_ref(ax: Any, x: float, y: float, w: float, h: float, item: dict[str, Any]) -> None:
+    path = str(item.get("path", "")).strip()
+    if not path:
+        label = str(item.get("label", "Image")).strip() or "Image"
+        _draw_text_lines(ax, x, y, w, h, [_short(_cap_label(label), 24)], color="#FFFFFF", size=7)
+        return
+    try:
+        arr = plt.imread(path)
+        pad_x = w * 0.05
+        pad_y = h * 0.07
+        ax.imshow(
+            arr,
+            extent=(x + pad_x, x + w - pad_x, y + pad_y, y + h - pad_y),
+            zorder=2.5,
+            aspect="auto",
+        )
+    except Exception:  # noqa: BLE001
+        label = str(item.get("label", Path(path).stem)).strip() or Path(path).stem
+        _draw_text_lines(ax, x, y, w, h, [_short(_cap_label(label), 24)], color="#FFFFFF", size=7)
 
 
 def _draw_shape_icon(ax: Any, x: float, y: float, w: float, h: float, item: dict[str, Any]) -> None:
@@ -589,15 +617,17 @@ def _draw_text_lines(ax: Any, x: float, y: float, w: float, h: float, lines: lis
     if not lines:
         return
     wrapped = _wrap_lines(lines, width=max(14, int(18 + w * 60)), max_lines=5)
+    text_blob = "\n".join(wrapped)
     ax.text(
         x + w / 2,
         y + h * 0.56,
-        "\n".join(wrapped),
+        text_blob,
         ha="center",
         va="center",
         fontsize=size,
         color=color,
         linespacing=1.08,
+        **_font_kwargs_for_text(text_blob),
     )
 
 
@@ -627,15 +657,17 @@ def _draw_positioned_text(
         width=max(12, int(16 + w * 52)),
         max_lines=(2 if dense else 3),
     )
+    text_blob = "\n".join(wrapped)
     ax.text(
         cx,
         cy,
-        "\n".join(wrapped),
+        text_blob,
         ha="center",
         va="center",
         fontsize=size,
         color=color,
         linespacing=1.08,
+        **_font_kwargs_for_text(text_blob),
     )
 
 
@@ -797,3 +829,17 @@ def _short(text: str, n: int) -> str:
     if len(text) <= n:
         return text
     return text[: n - 1] + "…"
+
+
+def _font_kwargs_for_text(text: str) -> dict[str, Any]:
+    if _contains_cjk(text):
+        return {"fontfamily": ["Microsoft YaHei", "SimHei", "Noto Sans CJK SC", "DejaVu Sans"]}
+    return {}
+
+
+def _contains_cjk(text: str) -> bool:
+    for ch in str(text or ""):
+        code = ord(ch)
+        if 0x4E00 <= code <= 0x9FFF or 0x3400 <= code <= 0x4DBF or 0x3000 <= code <= 0x303F:
+            return True
+    return False

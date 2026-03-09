@@ -74,7 +74,9 @@ python scripts/make_task_plot.py --mode source --methods-text "Fixation 500 ms, 
   - `phase.display_phase_label`
   - `phase.display_timing_label`
 - Stimulus examples must reflect participant-visible content inferred from `run_trial.py` + `stimuli` config.
-- For non-visual or unresolved dynamic stimuli, use textual annotation (e.g. `[audio:*]`, `[dynamic:*]`).
+- Use the exact sample stimulus shown to participants whenever it is available from config/runtime inference. Abstract placeholders like `cue_context`, `probe`, or internal condition/debug tokens are not acceptable screen content.
+- If a participant-visible phase calls `show(...)` without `set_trial_context(...)`, infer it where possible, write an explicit warning to audit/CLI output, and treat the task code as needing contract cleanup.
+- For non-visual or unresolved dynamic stimuli, use textual annotation only as a last resort (e.g. audio cue, unresolved dynamic asset).
 
 ## Auto QA Rework Loop
 

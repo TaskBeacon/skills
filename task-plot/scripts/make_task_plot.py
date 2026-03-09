@@ -104,6 +104,8 @@ def main() -> int:
     print(f"[OK] task_plot_spec JSON written: {spec_json_path}")
     print(f"[OK] source excerpt written: {excerpt_path}")
     print(f"[OK] audit written: {audit_path}")
+    for warning in result.get("audit", {}).get("warnings", []) or []:
+        print(f"[WARN] {warning}")
     if args.validate_only:
         print("[OK] validate-only run completed (render skipped)")
     else:
@@ -287,6 +289,10 @@ def _write_audit(
 
     lines.extend(["", "## 3. Evidence extracted from config/source", ""])
     lines.extend([f"- {x}" for x in result["audit"].get("source_evidence", [])])
+    warnings = result["audit"].get("warnings", [])
+    if warnings:
+        lines.extend(["", "## 3b. Warnings", ""])
+        lines.extend([f"- {x}" for x in warnings])
 
     lines.extend(["", "## 4. Mapping to task_plot_spec", ""])
     lines.extend([f"- {x}" for x in result["audit"].get("mapping", [])])
