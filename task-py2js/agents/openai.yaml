@@ -1,0 +1,4 @@
+interface:
+  display_name: "Task Py2Js"
+  short_description: "Port psyflow tasks to aligned psyflow-web tasks in TaskBeacon."
+  default_prompt: "Use $task-py2js to convert a TaskBeacon psyflow task into an aligned psyflow-web task."
