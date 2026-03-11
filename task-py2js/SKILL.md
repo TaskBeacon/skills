@@ -162,6 +162,9 @@ When the task is runnable:
 - ensure the shared runner can load the `H` repo
 - ensure `taskbeacon.github.io` can pair the html variant to the local task
 - ensure the live run URL uses the shared runner, not a per-task frontend app
+- add `.github/workflows/notify-psyflow-web.yml` to the `H` repo so pushes to `main` trigger a `repository_dispatch` refresh for `TaskBeacon/psyflow-web`
+- use the template at `references/notify-psyflow-web-workflow.yml`
+- keep the workflow source-only and note that it expects the org/repo secret `TASKBEACON_ORG_DISPATCH_TOKEN`
 
 ## Deliverable Standard
 
@@ -171,6 +174,7 @@ A successful port should leave:
 - a `main.ts` that still reads like the local `main.py`
 - a `run_trial.ts` that expresses the same trial contract through `psyflow-web`
 - browser-only concerns absorbed by `psyflow-web`
+- the `H` repo wired to refresh the shared runner after pushes
 - parameter and procedure alignment explicit and reviewable
 
 ## Output Expectations
@@ -181,4 +185,5 @@ When using this skill, report:
 - what files were created or updated in the `H` repo
 - which parts were aligned exactly
 - which parts intentionally differ for web or preview reasons
+- whether the `notify-psyflow-web` workflow was added
 - what was verified and what still needs validation
