@@ -1,5 +1,11 @@
 name: Notify psyflow-web
 
+# Required secret:
+# - TASKBEACON_ORG_DISPATCH_TOKEN
+# For a fine-grained PAT, grant access to TaskBeacon/psyflow-web with:
+# - Contents: Read and write
+# TaskBeacon org approval may also be required if PAT approval is enforced.
+
 on:
   push:
     branches:

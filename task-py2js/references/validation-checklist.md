@@ -47,4 +47,5 @@ Run this checklist before calling a port aligned.
 - Verify exports download correctly.
 - Confirm `.github/workflows/notify-psyflow-web.yml` exists in the `H` repo.
 - Confirm the workflow points to `TaskBeacon/psyflow-web` and uses `event_type: html-task-updated`.
+- Confirm `TASKBEACON_ORG_DISPATCH_TOKEN` is documented as requiring access to `TaskBeacon/psyflow-web` with `Contents: Read and write`.
 - Document any intentional local-vs-web differences.

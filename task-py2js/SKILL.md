@@ -165,6 +165,8 @@ When the task is runnable:
 - add `.github/workflows/notify-psyflow-web.yml` to the `H` repo so pushes to `main` trigger a `repository_dispatch` refresh for `TaskBeacon/psyflow-web`
 - use the template at `references/notify-psyflow-web-workflow.yml`
 - keep the workflow source-only and note that it expects the org/repo secret `TASKBEACON_ORG_DISPATCH_TOKEN`
+- document the secret requirement correctly: for a fine-grained PAT, grant access to `TaskBeacon/psyflow-web` with `Contents: Read and write`; `Actions: write` alone is not sufficient for `repository_dispatch`
+- if the org enforces PAT approval, note that the token may also need TaskBeacon org approval before dispatch calls succeed
 
 ## Deliverable Standard
 
