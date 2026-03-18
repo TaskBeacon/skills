@@ -33,6 +33,7 @@ task_plot_spec:
       filename: "task_flow.png"
       dpi: int >= 72
       width_in: float > 4
+      auto_width: bool (optional, default true)
       background: white|transparent
 
     layout:
@@ -96,6 +97,7 @@ task_plot_spec:
 - Every phase should include duration and response window when inferable.
 - Duration labels are rendered as black text on transparent background and must clear all screen rectangles.
 - Timeline arrow is rendered parallel to the screen cascade (using first/last screen anchor geometry) and offset downward.
+- When `figure.output.auto_width=false`, renderer uses `width_in` directly instead of auto-compacting by phase count.
 - Screen content should show the exact sample participant-visible stimulus whenever config/runtime evidence is sufficient.
 - Abstract internal labels or condition/debug tokens must not be used as the screen content when the actual stimulus can be resolved.
 - If a participant-visible phase is inferred from `show()` because `set_trial_context(...)` is missing, the plot audit must emit an explicit warning.

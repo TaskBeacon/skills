@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt
+from matplotlib.patches import Circle
+from matplotlib.patches import Ellipse
 from matplotlib.patches import FancyBboxPatch
 from matplotlib.patches import Polygon
 
@@ -29,8 +31,16 @@ def render_task_flow_png(
     n_max_screens = max((len(t.get("phases", [])) for t in timelines), default=1)
 
     width_cap = float(output.get("width_in", 16.0))
+    auto_width_flag = output.get("auto_width", True)
+    if isinstance(auto_width_flag, str):
+        auto_width_enabled = auto_width_flag.strip().lower() not in {"0", "false", "no", "off"}
+    else:
+        auto_width_enabled = bool(auto_width_flag)
     auto_width = 4.6 + 0.74 * n_max_screens + 0.22 * max(0, n_tl - 1)
-    width_in = max(5.8, min(width_cap, auto_width))
+    if auto_width_enabled:
+        width_in = max(5.8, min(width_cap, auto_width))
+    else:
+        width_in = max(5.8, width_cap)
     target_canvas_ar = 2.0 if n_tl <= 1 else 1.85
     height_by_aspect = width_in / target_canvas_ar
     height_by_rows = 2.6 + 1.82 * max(0, n_tl - 1)
@@ -466,7 +476,7 @@ def _draw_stimulus_content(ax: Any, x: float, y: float, w: float, h: float, phas
 
     text_lines: list[str] = []
     placed_text: list[dict[str, Any]] = []
-    shape_item = None
+    shape_items: list[dict[str, Any]] = []
     image_item = None
     for item in render_items:
         if not isinstance(item, dict):
@@ -475,8 +485,8 @@ def _draw_stimulus_content(ax: Any, x: float, y: float, w: float, h: float, phas
         if kind == "image_ref" and image_item is None:
             image_item = item
             continue
-        if kind == "shape" and shape_item is None:
-            shape_item = item
+        if kind == "shape":
+            shape_items.append(item)
             continue
         if kind == "text" and _has_pos(item.get("pos")):
             placed_text.append(item)
@@ -488,10 +498,10 @@ def _draw_stimulus_content(ax: Any, x: float, y: float, w: float, h: float, phas
     if image_item is not None:
         _draw_image_ref(ax, x, y, w, h, image_item)
 
-    if shape_item is not None:
+    for shape_item in shape_items[:8]:
         _draw_shape_icon(ax, x, y, w, h, shape_item)
 
-    for item in placed_text[:3]:
+    for item in placed_text[:8]:
         _draw_positioned_text(ax, x, y, w, h, item, dense=(len(placed_text) > 1))
 
     if text_lines:
@@ -522,11 +532,55 @@ def _draw_image_ref(ax: Any, x: float, y: float, w: float, h: float, item: dict[
 def _draw_shape_icon(ax: Any, x: float, y: float, w: float, h: float, item: dict[str, Any]) -> None:
     shape = str(item.get("shape", "generic")).lower()
     color = _resolve_color(item.get("color"), default="#FFFFFF")
+    line_color = _resolve_color(item.get("line_color"), default=color)
+    try:
+        line_width = float(item.get("line_width", 1.0))
+    except Exception:  # noqa: BLE001
+        line_width = 1.0
+    line_width = max(0.6, min(3.2, line_width))
+    try:
+        alpha = float(item.get("alpha", 1.0))
+    except Exception:  # noqa: BLE001
+        alpha = 1.0
+    alpha = max(0.2, min(1.0, alpha))
     cx, cy = _map_pos_to_screen(item.get("pos"), x, y, w, h, default_x_frac=0.5, default_y_frac=0.56)
     base = min(w, h)
     size_scale = _size_scale(item.get("size"), default=0.44)
     sx = base * size_scale
     sy = sx * 0.78
+
+    if shape in {"circle", "ring", "dot"}:
+        if shape == "dot":
+            radius = sx * 0.20
+            face_color = color
+            edge_color = color
+        else:
+            radius = sx * 0.33
+            face_color = "none" if shape == "ring" else color
+            edge_color = line_color
+        # Axes data coords are not square in pixel space; compensate so circles stay visually round.
+        y_radius = _radius_y_for_visual_circle(ax=ax, radius_x=radius)
+        if abs(y_radius - radius) <= 1e-6:
+            patch = Circle(
+                (cx, cy),
+                radius=radius,
+                facecolor=face_color,
+                edgecolor=edge_color,
+                linewidth=line_width,
+                alpha=alpha,
+            )
+        else:
+            patch = Ellipse(
+                (cx, cy),
+                width=2.0 * radius,
+                height=2.0 * y_radius,
+                facecolor=face_color,
+                edgecolor=edge_color,
+                linewidth=line_width,
+                alpha=alpha,
+            )
+        ax.add_patch(patch)
+        return
 
     if shape == "arrow_left":
         points = [
@@ -562,7 +616,14 @@ def _draw_shape_icon(ax: Any, x: float, y: float, w: float, h: float, item: dict
             (cx + sx * 0.45, cy - sy * 0.35),
             (cx - sx * 0.45, cy - sy * 0.35),
         ]
-    patch = Polygon(points, closed=True, facecolor=color, edgecolor=color, linewidth=1.0)
+    patch = Polygon(
+        points,
+        closed=True,
+        facecolor=color,
+        edgecolor=line_color,
+        linewidth=line_width,
+        alpha=alpha,
+    )
     ax.add_patch(patch)
 
     if shape == "stop":
@@ -843,3 +904,15 @@ def _contains_cjk(text: str) -> bool:
         if 0x4E00 <= code <= 0x9FFF or 0x3400 <= code <= 0x4DBF or 0x3000 <= code <= 0x303F:
             return True
     return False
+
+
+def _radius_y_for_visual_circle(ax: Any, radius_x: float) -> float:
+    try:
+        box = ax.get_window_extent()
+        w_px = float(box.width)
+        h_px = float(box.height)
+        if w_px <= 0 or h_px <= 0:
+            return radius_x
+        return radius_x * (w_px / h_px)
+    except Exception:  # noqa: BLE001
+        return radius_x
