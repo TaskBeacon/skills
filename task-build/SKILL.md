@@ -150,12 +150,16 @@ PsyFlow-first implementation decision rules:
 
 - Start from the simplest PsyFlow-native implementation path, then add task-specific abstractions only when the native path cannot express the paradigm.
 - Condition generation:
+  - Default path: use built-in `BlockUnit.generate_conditions(...)` to produce label-level trial conditions.
+  - `src/run_trial.py` should realize concrete stimuli/parameters from each `condition` label (for example set size, layout, timing jitter, stimulus composition).
+  - For duration ranges/jitter, pass ranges directly to `StimUnit.show(...)` / `StimUnit.capture_response(...)`; do not duplicate task-local `_sample_duration` logic unless explicitly required by the protocol or audit design.
+  - If deterministic runtime sampling is needed, derive randomness from a stable seed basis (for example block seed + trial index/trial id) and keep sampling auditable.
   - Prefer built-in `BlockUnit.generate_conditions(...)` using config-defined condition labels/weights/order.
   - If weighted generation is required, define `task.condition_weights` explicitly in `config/config.yaml` (and mirrored mode profiles as needed).
   - `task.condition_weights` can be a mapping by condition label or a list aligned to `task.conditions`.
   - Runtime code should resolve weight policy through `TaskSettings.resolve_condition_weights()` instead of custom helper functions.
   - If `task.condition_weights` is omitted (or `null`), assume even/default generation unless a custom generator is documented.
-  - Use a custom generation function only when simple condition labels cannot represent the required trial semantics.
+  - Use a custom generation function only when label-level generation cannot represent required semantics (for example cross-trial constraints, forbidden repeats, precompiled special sequences, or mandatory item-level preplans for audit/replay).
   - If custom generation is used, document the reason and data shape in `references/task_logic_audit.md` before coding.
 - `utils.py` scope:
   - `utils.py` is optional and should only hold task-specific helpers that fill real framework gaps (for example adaptive RT/staircase control, complex sequence generation, asset pools, stimulus bookkeeping).
@@ -228,6 +232,7 @@ README contract requirements:
   - `## 3. Configuration Summary`
   - `## 4. Methods (for academic publication)`
 - In `## 2`, include block-level flow, trial-level flow, controller logic, and other logic (if present).
+- If `<task>/task_flow.png` exists, `README.md` must place `![Task Flow](task_flow.png)` at the beginning of section `## 2. Task Flow` as the default flow preview.
 - In `## 3`, include subject info, window settings, stimuli, timing, triggers (if present), and adaptive controller (if present).
 - Ensure table formatting is consistent and auditable (header row + separator + blank line after each table).
 

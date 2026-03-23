@@ -19,6 +19,7 @@ Write outputs to:
 - `<task>/references/task_plot_spec.json`
 - `<task>/references/task_plot_source_excerpt.md`
 - `<task>/references/task_plot_audit.md`
+- If `<task>/README.md` exists, update it after rendering so section `## 2. Task Flow` starts with `![Task Flow](task_flow.png)` as the default preview.
 
 Do not write figure outputs to `assets/`.
 
@@ -63,12 +64,14 @@ python scripts/make_task_plot.py --mode source --methods-text "Fixation 500 ms, 
 - Screens overlap by `screen_overlap_ratio` (default `0.05`).
 - Timeline baseline is sloped (`screen_slope`) and drawn as parallel lines under screens.
 - Timeline start is annotated with condition label.
+- If condition variants are long or numerous, render variant note as wrapped multi-line text to avoid overlap with the first screen.
 - Each screen is annotated with:
   - phase name
   - duration
   - response window (if any)
 - Duration labels use black text on transparent background and must not overlap any screen.
 - Timeline arrow must be parallel to the screen cascade and offset downward to avoid text overlap.
+- Figure layout must minimize unused whitespace; large right/bottom blank areas should trigger auto layout/crop adjustments before final output.
 - Display labels must be explicit in spec for reproducibility:
   - `timeline.display_condition_label`
   - `phase.display_phase_label`

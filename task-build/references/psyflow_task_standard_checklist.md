@@ -32,6 +32,10 @@ Use this checklist before running final gates.
 - Participant-facing labels/text/options are config-driven (`config/*.yaml` stimuli), not hardcoded in `src/run_trial.py`.
 - `src/run_trial.py` should not directly instantiate participant-facing text stimuli with literal text; use `stim_bank.get(...)` / `stim_bank.get_and_format(...)`.
 - If custom condition generation is used, `references/task_logic_audit.md` documents why built-in block condition generation is insufficient.
+- Default condition path uses built-in `BlockUnit.generate_conditions(...)` for label-level scheduling, and `src/run_trial.py` realizes condition-specific stimuli/parameters at runtime.
+- Duration ranges/jitter should be passed directly to `StimUnit.show(...)` / `StimUnit.capture_response(...)`; avoid duplicating task-local `_sample_duration` helpers unless explicitly justified by protocol/audit requirements.
+- Runtime sampling that depends on condition should be reproducible from stable seeds (for example block seed + trial index/trial id) when reproducibility is required.
+- Custom `generate_*_conditions` is reserved for cross-trial/global sequence constraints, forbidden-repeat rules, or required item-level precompiled plans.
 - If weighted condition generation is used, `task.condition_weights` is explicitly defined in config and aligned with `task.conditions`.
 - Runtime resolves `task.condition_weights` through `TaskSettings.resolve_condition_weights()` (no task-local duplicate parser).
 - If `task.condition_weights` is omitted (or `null`) and no custom generator is used, condition generation is treated as even/default by design.
@@ -76,6 +80,7 @@ Use this checklist before running final gates.
   - `## 2. Task Flow`
   - `## 3. Configuration Summary`
   - `## 4. Methods (for academic publication)`
+- If `<task>/task_flow.png` exists, section `## 2. Task Flow` starts with `![Task Flow](task_flow.png)` as the default visual preview.
 - README task flow includes block-level, trial-level, controller logic, and other logic (if applicable).
 - README configuration summary includes subject info, window, stimuli, timing, triggers (if present), and adaptive controller (if present).
 - README/audit descriptions of condition generation and controller usage match the actual runtime implementation (no stale references to removed abstractions).

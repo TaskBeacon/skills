@@ -83,7 +83,7 @@ def render_task_flow_png(
 
     title_x = 0.02
     condition_col_w = _measure_condition_block_width(ax, timelines)
-    condition_col_w = max(0.08, min(0.30, condition_col_w))
+    condition_col_w = max(0.08, min(0.24, condition_col_w))
     condition_left = title_x
     condition_right = condition_left + condition_col_w
     condition_center_x = 0.5 * (condition_left + condition_right)
@@ -111,7 +111,7 @@ def render_task_flow_png(
     # Keep the slope visually strong but bounded so long timelines still leave room for arrow/text.
     slope = min(slope, screen_h * 0.34)
 
-    row_anchor_offset = (0.24 if n_tl == 1 else 0.19) * row_slot
+    row_anchor_offset = (0.34 if n_tl == 1 else 0.19) * row_slot
     for row_idx, timeline in enumerate(timelines):
         y_base = top_y - row_anchor_offset - row_idx * row_slot
         _draw_timeline(
@@ -187,15 +187,17 @@ def _draw_timeline(
     if not condition_note:
         condition_note = _variant_note(timeline)
     if condition_note:
-        variant_offset = max(0.016, min(0.030, row_slot * 0.20))
+        condition_note = _format_condition_note(condition_note, max_chars=(22 if row_slot > 0.70 else 26))
+        variant_offset = max(0.018, min(0.040, row_slot * 0.24))
         ax.text(
             condition_x,
             y_base - variant_offset,
-            _short(condition_note, 48),
+            condition_note,
             ha="center",
-            va="center",
+            va="top",
             fontsize=7,
             color="#6B7280",
+            linespacing=1.06,
         )
 
     if not phases:
@@ -646,8 +648,9 @@ def _measure_condition_block_width(ax: Any, timelines: list[dict[str, Any]]) -> 
         )
         note = str(timeline.get("display_condition_note", "")).strip() or _variant_note(timeline)
         if note:
+            note = _format_condition_note(note, max_chars=24)
             texts.append(
-                ax.text(0.0, 0.0, _short(note, 48), ha="left", va="bottom", fontsize=7, alpha=0.0)
+                ax.text(0.0, 0.0, note, ha="left", va="bottom", fontsize=7, alpha=0.0, linespacing=1.06)
             )
 
     if not texts:
@@ -668,10 +671,20 @@ def _variant_note(timeline: dict[str, Any]) -> str:
     variants = timeline.get("condition_variants")
     if not isinstance(variants, list) or not variants:
         return ""
-    label = "Also: " + ", ".join(_cap_label(str(v)) for v in variants[:3])
-    if len(variants) > 3:
-        label += f" (+{len(variants) - 3})"
+    if len(variants) <= 2:
+        label = "Also: " + ", ".join(_cap_label(str(v)) for v in variants)
+    else:
+        label = "Also: " + ", ".join(_cap_label(str(v)) for v in variants[:2])
+        label += f" (+{len(variants) - 2})"
     return label
+
+
+def _format_condition_note(note: str, max_chars: int = 24, max_lines: int = 2) -> str:
+    cleaned = " ".join(str(note).split())
+    if not cleaned:
+        return ""
+    wrapped = _wrap_lines([cleaned], width=max(14, int(max_chars)), max_lines=max(1, int(max_lines)))
+    return "\n".join(wrapped)
 
 
 def _draw_text_lines(ax: Any, x: float, y: float, w: float, h: float, lines: list[str], color: str, size: int) -> None:
@@ -712,11 +725,11 @@ def _draw_positioned_text(
         return
     cx, cy = _map_pos_to_screen(item.get("pos"), x, y, w, h, default_x_frac=0.5, default_y_frac=0.58)
     color = _resolve_color(item.get("color"), "#FFFFFF")
-    size = _text_size(item.get("height"), default=(6 if dense else 7))
+    size = _text_size(item.get("height"), default=(4 if dense else 7))
     wrapped = _wrap_lines(
         _expand_text_fragments(_cap_label(text)),
         width=max(12, int(16 + w * 52)),
-        max_lines=(2 if dense else 3),
+        max_lines=(1 if dense else 3),
     )
     text_blob = "\n".join(wrapped)
     ax.text(
@@ -727,7 +740,7 @@ def _draw_positioned_text(
         va="center",
         fontsize=size,
         color=color,
-        linespacing=1.08,
+        linespacing=1.0,
         **_font_kwargs_for_text(text_blob),
     )
 

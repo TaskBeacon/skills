@@ -140,6 +140,8 @@ def infer_from_existing_task(task_path: str | Path) -> dict[str, Any]:
                 condition=condition,
                 phase_name=phase_name,
                 stimuli_cfg=stimuli_cfg,
+                task_cfg=task_cfg,
+                controller_cfg=controller_cfg,
                 task_dir=task_dir,
             )
             if not stim_ids:
@@ -197,6 +199,8 @@ def infer_from_existing_task(task_path: str | Path) -> dict[str, Any]:
                 condition=condition,
                 phase_name=phase_name,
                 stimuli_cfg=stimuli_cfg,
+                task_cfg=task_cfg,
+                controller_cfg=controller_cfg,
                 task_dir=task_dir,
             )
             if not stim_ids:
@@ -411,10 +415,14 @@ def _extract_phase_templates(tree: ast.AST) -> dict[str, Any]:
                 pred, label, unresolved = _predicate_from_test(stmt.test)
                 if unresolved:
                     unresolved_predicates.append(unresolved)
-                traverse(stmt.body, predicates + [pred], labels + [label])
-                if stmt.orelse:
-                    neg = _negate(pred)
-                    traverse(stmt.orelse, predicates + [neg], labels + [f"NOT({label})"])
+                    traverse(stmt.body, predicates, labels)
+                    if stmt.orelse:
+                        traverse(stmt.orelse, predicates, labels)
+                else:
+                    traverse(stmt.body, predicates + [pred], labels + [label])
+                    if stmt.orelse:
+                        neg = _negate(pred)
+                        traverse(stmt.orelse, predicates + [neg], labels + [f"NOT({label})"])
                 continue
 
             if isinstance(stmt, (ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith)):
@@ -1006,7 +1014,18 @@ def _resolve_stim_ids(
 
 
 def _split_compound_stim_id(token: str) -> list[str]:
-    parts = [p.strip() for p in token.split("+") if p.strip()]
+    parts: list[str] = []
+    for raw_part in token.split("+"):
+        part = raw_part.strip()
+        if not part:
+            continue
+        repeat = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)\*(\d+)", part)
+        if repeat:
+            base = repeat.group(1).strip()
+            count = max(1, min(50, int(repeat.group(2))))
+            parts.extend([base] * count)
+        else:
+            parts.append(part)
     return parts if parts else [token.strip()]
 
 
@@ -1058,8 +1077,46 @@ def _build_stimulus_example(
     condition: str,
     phase_name: str,
     stimuli_cfg: dict[str, Any],
+    task_cfg: dict[str, Any],
+    controller_cfg: dict[str, Any],
     task_dir: Path,
 ) -> dict[str, Any]:
+    task_name = str(task_cfg.get("task_name", "")).lower()
+    task_name_lc = task_name.lower()
+    is_cgt = "gambling" in task_name_lc or "cambridge gambling" in task_name_lc
+    cgt_layout = _cgt_layout(controller_cfg, stimuli_cfg) if is_cgt else {}
+    phase_key = _normalize_phase_seed(phase_name)
+    added_box_summary = False
+    added_bet_summary = False
+    if not stim_ids:
+        phase_key = _normalize_phase_seed(phase_name)
+        condition_key = _normalize_phase_seed(condition)
+        fallback_ids: list[str] = []
+        if "fixation" in phase_key or phase_key == "iti":
+            if "fixation" in stimuli_cfg:
+                fallback_ids = ["fixation"]
+        elif "cue" in phase_key:
+            if condition_key in {"prosaccade", "antisaccade"} and {"rule_pro", "rule_anti"}.issubset(
+                set(stimuli_cfg.keys())
+            ):
+                cue_id = "rule_pro" if condition_key == "prosaccade" else "rule_anti"
+                if cue_id in stimuli_cfg:
+                    fallback_ids = [cue_id, "left_anchor", "right_anchor"]
+        elif "saccade" in phase_key or "response" in phase_key:
+            fallback_ids = ["left_anchor", "right_anchor"]
+            if "left_target" in stimuli_cfg:
+                fallback_ids.append("left_target")
+            elif "right_target" in stimuli_cfg:
+                fallback_ids.append("right_target")
+        if fallback_ids:
+            stim_ids = fallback_ids
+    if phase_name == "feedback" and any(
+        "feedback_choice" in stim_id or "feedback_timeout" in stim_id for stim_id in stim_ids
+    ):
+        if "feedback_choice" in stimuli_cfg:
+            stim_ids = ["feedback_choice"]
+        elif "feedback_timeout" in stimuli_cfg:
+            stim_ids = ["feedback_timeout"]
     if not stim_ids:
         return {
             "summary": f"[annotation] {phase_name}",
@@ -1074,11 +1131,62 @@ def _build_stimulus_example(
     render_items: list[dict[str, Any]] = []
     for stim_id in stim_ids:
         stim = stimuli_cfg.get(stim_id)
+        if is_cgt and phase_key in {"color_choice", "bet_choice"} and stim_id == "box_token_template":
+            if not added_box_summary:
+                parts.append(cgt_layout.get("box_summary", "10 boxes"))
+                added_box_summary = True
+            box_items = cgt_layout.get("box_items", [])
+            if box_items:
+                render_items.extend(box_items)
+                modalities.add("visual")
+                draw_hints.add("shape")
+                continue
+        if is_cgt and phase_key == "bet_choice" and stim_id == "bet_option_template":
+            if not added_bet_summary:
+                parts.append(cgt_layout.get("bet_summary", "Bet options"))
+                added_bet_summary = True
+            bet_items = cgt_layout.get("bet_items", [])
+            if bet_items:
+                render_items.extend(bet_items)
+                modalities.add("visual")
+                draw_hints.add("text")
+                continue
         if isinstance(stim, dict):
             text_type = str(stim.get("type", "")).lower()
+            if is_cgt and phase_key == "color_choice" and stim_id in {"score_text", "ratio_text", "color_key_hint"}:
+                parts.append(
+                    _shorten(
+                        _fill_placeholder_text(
+                            str(stim.get("text", stim_id)),
+                            condition,
+                            stim_id=stim_id,
+                            task_cfg=task_cfg,
+                        ),
+                        40,
+                    )
+                )
+                continue
+            if is_cgt and phase_key == "bet_choice" and stim_id in {"score_text", "bet_key_hint"}:
+                parts.append(
+                    _shorten(
+                        _fill_placeholder_text(
+                            str(stim.get("text", stim_id)),
+                            condition,
+                            stim_id=stim_id,
+                            task_cfg=task_cfg,
+                        ),
+                        40,
+                    )
+                )
+                continue
             if text_type in {"text", "textbox"}:
                 raw = str(stim.get("text", stim_id))
-                example = _fill_placeholder_text(raw, condition=condition)
+                example = _fill_placeholder_text(
+                    raw,
+                    condition=condition,
+                    stim_id=stim_id,
+                    task_cfg=task_cfg,
+                )
                 parts.append(example)
                 modalities.add("visual")
                 draw_hints.add("text")
@@ -1091,16 +1199,23 @@ def _build_stimulus_example(
                         "height": _extract_text_height(stim.get("height")),
                     }
                 )
-            elif text_type in {"shape", "polygon"}:
+            elif text_type in {"shape", "polygon", "circle"}:
                 token = _shape_token(stim_id, condition)
-                parts.append(token["label"])
-                modalities.add("visual")
-                draw_hints.add("shape")
-                token["kind"] = "shape"
-                token["color"] = _color_token(stim.get("fillColor"))
-                token["pos"] = _extract_pos_token(stim.get("pos"))
-                token["size"] = _extract_size_token(stim.get("size"))
-                render_items.append(token)
+                if text_type == "circle":
+                    circle_token = _circle_token(stim_id, stim)
+                    parts.append(circle_token["label"])
+                    modalities.add("visual")
+                    draw_hints.add("shape")
+                    render_items.append(circle_token)
+                else:
+                    parts.append(token["label"])
+                    modalities.add("visual")
+                    draw_hints.add("shape")
+                    token["kind"] = "shape"
+                    token["color"] = _color_token(stim.get("fillColor"))
+                    token["pos"] = _extract_pos_token(stim.get("pos"))
+                    token["size"] = _extract_size_token(stim.get("size"))
+                    render_items.append(token)
             elif "sound" in text_type or "audio" in text_type:
                 parts.append(f"[audio:{stim_id}]")
                 modalities.add("audio")
@@ -1129,6 +1244,14 @@ def _build_stimulus_example(
                 draw_hints.add("annotation")
                 render_items.append({"kind": "annotation", "text": f"{text_type or 'stim'}: {stim_id}"})
         else:
+            if phase_name == "feedback":
+                feedback_branch = _feedback_branch_example(task_cfg, condition)
+                if feedback_branch:
+                    parts.append(feedback_branch["summary"])
+                    modalities.add("visual")
+                    draw_hints.add("text")
+                    render_items.extend(feedback_branch["render_items"])
+                    continue
             parts.append(f"[dynamic:{stim_id}]")
             modalities.add("other")
             draw_hints.add("annotation")
@@ -1142,6 +1265,111 @@ def _build_stimulus_example(
         "modality": modality,
         "draw_hint": draw_hint,
         "render_items": render_items,
+    }
+
+
+def _cgt_layout(controller_cfg: dict[str, Any], stimuli_cfg: dict[str, Any]) -> dict[str, Any]:
+    ratios = controller_cfg.get("box_ratios") if isinstance(controller_cfg, dict) else None
+    if not isinstance(ratios, (list, tuple)) or not ratios:
+        ratios = [[9, 1]]
+    first_pair = None
+    for pair in ratios:
+        if isinstance(pair, (list, tuple)) and len(pair) >= 2:
+            try:
+                a = max(1, int(round(float(pair[0]))))
+                b = max(1, int(round(float(pair[1]))))
+            except Exception:  # noqa: BLE001
+                continue
+            total = a + b
+            if total > 0:
+                first_pair = (a, b)
+                break
+    if first_pair is None:
+        first_pair = (9, 1)
+    red_boxes, blue_boxes = first_pair
+    if red_boxes + blue_boxes != 10:
+        total = red_boxes + blue_boxes
+        scale = 10.0 / float(total)
+        red_boxes = max(1, int(round(red_boxes * scale)))
+        blue_boxes = max(1, int(round(blue_boxes * scale)))
+        drift = red_boxes + blue_boxes - 10
+        if drift != 0:
+            if red_boxes >= blue_boxes:
+                red_boxes = max(1, red_boxes - drift)
+            else:
+                blue_boxes = max(1, blue_boxes - drift)
+        if red_boxes + blue_boxes != 10:
+            red_boxes, blue_boxes = 9, 1
+    red_color = _color_token(stimuli_cfg.get("box_token_template", {}).get("fillColor"))
+    if not red_color:
+        red_color = "#eb3a3a"
+    blue_color = "#3f6df2"
+    colors = [red_color] * red_boxes + [blue_color] * blue_boxes
+    # Use normalized positions so the renderer spreads all 10 boxes across the screen card
+    # instead of clipping large pixel coordinates into the same edge positions.
+    positions = [[-0.90 + 0.20 * idx, 0.42] for idx in range(10)]
+    initial_points = 100
+    if isinstance(controller_cfg, dict):
+        try:
+            initial_points = max(0, int(round(float(controller_cfg.get("initial_points", 100)))))
+        except Exception:  # noqa: BLE001
+            initial_points = 100
+
+    box_items: list[dict[str, Any]] = [
+        {
+            "kind": "text",
+            "text": f"Score: {initial_points} | 10 boxes ({red_boxes} red / {blue_boxes} blue)",
+            "color": "#F8F8F8",
+            "pos": [0.0, 0.72],
+            "height": 20,
+        }
+    ]
+    for idx in range(10):
+        box_items.append(
+            {
+                "kind": "shape",
+                "label": f"Box {idx + 1}",
+                "color": colors[idx] if idx < len(colors) else blue_color,
+                "line_color": "#f5f5f5",
+                "line_width": 1.0,
+                "pos": positions[idx],
+                "size": 1.8,
+            }
+        )
+
+    bet_options = controller_cfg.get("bet_options") if isinstance(controller_cfg, dict) else None
+    if not isinstance(bet_options, (list, tuple)) or not bet_options:
+        bet_options = [5, 25, 50, 75, 95]
+    bet_positions = [[-0.76, -0.34], [-0.38, -0.34], [0.0, -0.34], [0.38, -0.34], [0.76, -0.34]]
+    bet_items: list[dict[str, Any]] = [
+        {
+            "kind": "text",
+            "text": f"Score: {initial_points} | Bet options: " + " / ".join(f"{item}%" for item in list(bet_options)[:5]),
+            "color": "#F8F8F8",
+            "pos": [0.0, 0.16],
+            "height": 18,
+        }
+    ]
+    for idx, pct in enumerate(list(bet_options)[:5]):
+        try:
+            label = f"{int(round(float(pct)))}%"
+        except Exception:  # noqa: BLE001
+            continue
+        bet_items.append(
+            {
+                "kind": "text",
+                "text": label,
+                "color": "#F2F2F2",
+                "pos": bet_positions[idx],
+                "height": 36,
+            }
+        )
+
+    return {
+        "box_summary": f"10 boxes ({red_boxes} red / {blue_boxes} blue)",
+        "bet_summary": "Bet options: " + " / ".join(item["text"] for item in bet_items),
+        "box_items": box_items,
+        "bet_items": bet_items,
     }
 
 
@@ -1169,6 +1397,34 @@ def _shape_token(stim_id: str, condition: str) -> dict[str, str]:
     if "stop" in text:
         return {"shape": "stop", "label": "Stop Signal"}
     return {"shape": "generic", "label": f"Shape: {stim_id}"}
+
+
+def _circle_token(stim_id: str, stim: dict[str, Any]) -> dict[str, Any]:
+    sid = (stim_id or "").lower()
+    if "target" in sid:
+        label = "Left Target" if "left" in sid else "Right Target" if "right" in sid else "Target"
+    elif "anchor" in sid:
+        label = "Left Anchor" if "left" in sid else "Right Anchor" if "right" in sid else "Anchor"
+    else:
+        label = "Circle"
+    fill = stim.get("fillColor")
+    line = stim.get("lineColor")
+    radius = _float_or_none(stim.get("radius"))
+    size = None
+    if radius is not None and radius > 0:
+        size = max(0.1, min(2.0, radius / 34.0))
+    filled = fill is not None
+    shape = "circle" if filled else "ring"
+    return {
+        "kind": "shape",
+        "shape": shape,
+        "label": label,
+        "color": _color_token(fill if filled else line),
+        "line_color": _color_token(line),
+        "line_width": _float_or_none(stim.get("lineWidth")) or 1.0,
+        "pos": _extract_pos_token(stim.get("pos")),
+        "size": size,
+    }
 
 
 def _color_token(value: Any) -> str:
@@ -1227,7 +1483,13 @@ def _float_or_none(value: Any) -> float | None:
         return None
 
 
-def _fill_placeholder_text(raw: str, condition: str) -> str:
+def _fill_placeholder_text(
+    raw: str,
+    condition: str,
+    *,
+    stim_id: str = "",
+    task_cfg: dict[str, Any] | None = None,
+) -> str:
     sample_map = {
         "old_key": "F",
         "new_key": "J",
@@ -1240,9 +1502,158 @@ def _fill_placeholder_text(raw: str, condition: str) -> str:
         "correct_key": "F",
         "condition": condition,
     }
-    line = raw.strip().splitlines()[0] if raw.strip() else ""
-    line = re.sub(r"\{([A-Za-z0-9_:.%+-]+)\}", lambda m: sample_map.get(m.group(1).split(":")[0], "…"), line)
-    return _shorten(line if line else "[text]")
+    sample_map.update(_task_placeholder_map(task_cfg, condition, stim_id))
+    text = raw.strip()
+    if not text:
+        return "[text]"
+    text = re.sub(r"\{([A-Za-z0-9_:.%+-]+)\}", lambda m: sample_map.get(m.group(1).split(":")[0], "…"), text)
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    if stim_id in {"safe_option_text", "gamble_option_text"}:
+        lines = [part.strip() for part in text.splitlines() if part.strip()]
+        text = " / ".join(lines)
+    return text
+
+
+def _task_placeholder_map(
+    task_cfg: dict[str, Any] | None,
+    condition: str,
+    stim_id: str,
+) -> dict[str, str]:
+    cfg = task_cfg if isinstance(task_cfg, dict) else {}
+    sample_map: dict[str, str] = {}
+
+    choice_labels = cfg.get("choice_labels") if isinstance(cfg.get("choice_labels"), dict) else {}
+    safe_label = str(choice_labels.get("safe", "方案A（确定）"))
+    gamble_label = str(choice_labels.get("gamble", "方案B（风险）"))
+    safe_key = str(cfg.get("safe_key", "F")).strip().upper() or "F"
+    gamble_key = str(cfg.get("gamble_key", "J")).strip().upper() or "J"
+    feedback_template = str(cfg.get("feedback_choice_template", "你选择了 {choice_label}"))
+
+    sample_map.update(
+        {
+            "safe_key": safe_key,
+            "gamble_key": gamble_key,
+            "choice_label": safe_label,
+            "chosen_text": feedback_template.replace("{choice_label}", safe_label),
+        }
+    )
+
+    offer = _task_offer_sample(cfg, condition)
+    if offer:
+        sample_map.update(_framing_offer_texts(condition, offer))
+
+    if "feedback_choice" in stim_id:
+        sample_map["chosen_text"] = feedback_template.replace("{choice_label}", safe_label)
+    elif "feedback_timeout" in stim_id:
+        sample_map["chosen_text"] = feedback_template.replace("{choice_label}", gamble_label)
+    return sample_map
+
+
+def _task_offer_sample(task_cfg: dict[str, Any], condition: str) -> dict[str, Any]:
+    banks = task_cfg.get("offer_banks")
+    if not isinstance(banks, dict):
+        return {}
+    rows = banks.get(condition)
+    if not isinstance(rows, list) or not rows:
+        return {}
+    first = rows[0]
+    return dict(first) if isinstance(first, dict) else {}
+
+
+def _framing_offer_texts(condition: str, offer: dict[str, Any]) -> dict[str, str]:
+    cond = str(condition or "").strip().lower()
+
+    if cond == "gain_frame":
+        endowment = _number_or_default(offer.get("endowment"), 100.0)
+        sure_keep = _number_or_default(offer.get("sure_keep"), 80.0)
+        gamble_keep = _number_or_default(offer.get("gamble_keep"), endowment)
+        gamble_prob = _clamp01(_number_or_default(offer.get("gamble_prob"), 0.8))
+        keep_pct = round(gamble_prob * 100)
+        zero_pct = 100 - keep_pct
+        return {
+            "frame_label": "收益框架",
+            "scenario_text": f"你获得 {int(round(endowment))} 元预算。请选择其一：",
+            "safe_option_text": f"方案A（确定）\n保留 {int(round(sure_keep))} 元",
+            "gamble_option_text": (
+                f"方案B（风险）\n{keep_pct}% 保留 {int(round(gamble_keep))} 元\n"
+                f"{zero_pct}% 保留 0 元"
+            ),
+        }
+
+    if cond == "loss_frame":
+        endowment = _number_or_default(offer.get("endowment"), 100.0)
+        sure_loss = _number_or_default(offer.get("sure_loss"), 20.0)
+        gamble_loss = _number_or_default(offer.get("gamble_loss"), endowment)
+        gamble_loss_prob = _clamp01(_number_or_default(offer.get("gamble_loss_prob"), 0.2))
+        no_loss_prob = 1.0 - gamble_loss_prob
+        loss_pct = round(gamble_loss_prob * 100)
+        keep_pct = round(no_loss_prob * 100)
+        return {
+            "frame_label": "损失框架",
+            "scenario_text": f"你获得 {int(round(endowment))} 元预算。请选择其一：",
+            "safe_option_text": f"方案A（确定）\n损失 {int(round(sure_loss))} 元",
+            "gamble_option_text": (
+                f"方案B（风险）\n{keep_pct}% 损失 0 元\n{loss_pct}% 损失 {int(round(gamble_loss))} 元"
+            ),
+        }
+
+    sure_amount = _number_or_default(offer.get("sure_amount"), 0.0)
+    gamble_gain = _number_or_default(offer.get("gamble_gain"), 40.0)
+    gamble_loss = _number_or_default(offer.get("gamble_loss"), 30.0)
+    gain_prob = _clamp01(_number_or_default(offer.get("gamble_gain_prob"), 0.5))
+    loss_prob = 1.0 - gain_prob
+    gain_pct = round(gain_prob * 100)
+    loss_pct = round(loss_prob * 100)
+    return {
+        "frame_label": "混合框架",
+        "scenario_text": "请选择其一：",
+        "safe_option_text": f"方案A（确定）\n{_amount_text(sure_amount)}",
+        "gamble_option_text": (
+            f"方案B（风险）\n{gain_pct}% 获得 {int(round(gamble_gain))} 元\n"
+            f"{loss_pct}% 损失 {int(round(gamble_loss))} 元"
+        ),
+    }
+
+
+def _number_or_default(value: Any, default: float) -> float:
+    parsed = _float_or_none(value)
+    return parsed if parsed is not None else float(default)
+
+
+def _amount_text(amount: float) -> str:
+    rounded = int(round(amount))
+    if rounded >= 0:
+        return f"获得 {rounded} 元"
+    return f"损失 {abs(rounded)} 元"
+
+
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
+
+
+def _feedback_branch_example(
+    task_cfg: dict[str, Any] | None,
+    condition: str,
+) -> dict[str, Any] | None:
+    cfg = task_cfg if isinstance(task_cfg, dict) else {}
+    if not cfg:
+        return None
+    texts = _task_placeholder_map(cfg, condition, "feedback_choice")
+    chosen_text = texts.get("chosen_text")
+    if not chosen_text:
+        return None
+    return {
+        "summary": chosen_text,
+        "render_items": [
+            {
+                "kind": "text",
+                "text": chosen_text,
+                "color": "white",
+                "pos": [0.0, -20.0],
+                "height": 34.0,
+            }
+        ],
+    }
 
 
 def _visible_show_has_context(
@@ -1371,7 +1782,12 @@ def _timeline_logic_signature(timeline: dict[str, Any]) -> tuple[Any, ...]:
         phase_name = _norm_text(str(phase.get("phase_name", "")))
         duration_sig = _duration_signature(phase.get("duration_ms"))
         response_sig = _duration_signature(phase.get("response_window_ms"))
-        signature.append((phase_name, duration_sig, response_sig))
+        stim_example = phase.get("stimulus_example", {})
+        if isinstance(stim_example, dict):
+            stimulus_sig = _norm_text(str(stim_example.get("summary", "")))
+        else:
+            stimulus_sig = ""
+        signature.append((phase_name, duration_sig, response_sig, stimulus_sig))
     return tuple(signature)
 
 

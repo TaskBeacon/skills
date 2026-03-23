@@ -86,6 +86,9 @@ def main() -> int:
         dump_yaml_document(validation.spec_root, spec_path)
         dump_json_document(validation.spec_root, spec_json_path)
         output_files.append(out_png)
+        readme_update_note = _update_readme_task_flow_embed(task_dir, output_name)
+        if readme_update_note:
+            print(f"[OK] {readme_update_note}")
 
     _write_audit(
         audit_path=audit_path,
@@ -220,6 +223,47 @@ def _ensure_task_dirs(task_dir: Path, task_name: str) -> None:
             f"# {task_name}\n\nAuto-created task folder for task-plot source workflow.\n",
             encoding="utf-8",
         )
+
+
+def _update_readme_task_flow_embed(task_dir: Path, image_name: str) -> str | None:
+    readme_path = task_dir / "README.md"
+    if not readme_path.exists():
+        return None
+
+    readme_text = readme_path.read_text(encoding="utf-8", errors="ignore")
+    lines = readme_text.splitlines()
+    heading_re = re.compile(r"^\s*##\s+2\.\s*Task Flow\s*$", flags=re.IGNORECASE)
+    section_heading_re = re.compile(r"^\s*##\s+")
+    image_re = re.compile(r"^\s*!\[Task Flow\]\([^)]+\)\s*$", flags=re.IGNORECASE)
+
+    heading_idx = next((i for i, line in enumerate(lines) if heading_re.match(line)), None)
+    if heading_idx is None:
+        return None
+
+    section_start = heading_idx + 1
+    section_end = len(lines)
+    for i in range(section_start, len(lines)):
+        if section_heading_re.match(lines[i]):
+            section_end = i
+            break
+
+    section_lines = lines[section_start:section_end]
+    section_lines = [line for line in section_lines if not image_re.match(line)]
+    while section_lines and not section_lines[0].strip():
+        section_lines.pop(0)
+
+    image_md = f"![Task Flow]({Path(image_name).as_posix()})"
+    new_section = ["", image_md, ""]
+    if section_lines:
+        new_section.extend(section_lines)
+
+    new_lines = lines[:section_start] + new_section + lines[section_end:]
+    new_text = "\n".join(new_lines).rstrip() + "\n"
+    if new_text == readme_text:
+        return None
+
+    readme_path.write_text(new_text, encoding="utf-8")
+    return f"README Task Flow preview updated: {readme_path}"
 
 
 def _create_draft_task_dir(draft_root: Path, task_name: str) -> Path:
@@ -498,7 +542,7 @@ def _needs_balanced_crop(metrics: dict[str, Any]) -> bool:
     right = float(metrics["right_ratio"])
     blank = float(metrics["blank_ratio"])
     lr_delta = abs(left - right)
-    return blank > 0.28 or lr_delta > 0.06 or max(left, right) > 0.18
+    return blank > 0.22 or lr_delta > 0.05 or max(left, right) > 0.14
 
 
 def _crop_png_balanced(png_path: Path, metrics: dict[str, Any]) -> None:
@@ -535,10 +579,10 @@ def _local_layout_flags(metrics: dict[str, Any]) -> dict[str, bool]:
     right = float(metrics["right_ratio"])
     blank = float(metrics["blank_ratio"])
     return {
-        "large_right_margin": right > max(0.16, left + 0.07),
-        "large_left_margin": left > max(0.16, right + 0.07),
-        "large_total_whitespace": blank > 0.34,
-        "margin_asymmetry": abs(left - right) > 0.08,
+        "large_right_margin": right > max(0.13, left + 0.06),
+        "large_left_margin": left > max(0.13, right + 0.06),
+        "large_total_whitespace": blank > 0.28,
+        "margin_asymmetry": abs(left - right) > 0.07,
     }
 
 

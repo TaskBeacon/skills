@@ -114,6 +114,8 @@ TEMPLATE_TEXT_SNIPPETS = (
 PLACEHOLDER_CUE_TARGET_RE = re.compile(r"^\s*(cue|target)\s*[:：]\s*[a-z0-9_\-\s]+\s*$", flags=re.IGNORECASE)
 MOJIBAKE_SEQ_RE = re.compile(r"(?:Ã.|Â.|â.|ð.)")
 MOJIBAKE_CHAR_MARKERS = ("Ã", "Â", "â", "ð", "�")
+TASK_FLOW_HEADING_RE = re.compile(r"^\s*##\s+2\.\s*Task Flow\s*$", flags=re.IGNORECASE)
+SECTION_HEADING_RE = re.compile(r"^\s*##\s+")
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -123,6 +125,30 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"Expected dictionary YAML in {path}")
     return payload
+
+
+def _validate_task_flow_embed(readme_text: str, image_name: str = "task_flow.png") -> str | None:
+    lines = readme_text.splitlines()
+    heading_idx = next((i for i, line in enumerate(lines) if TASK_FLOW_HEADING_RE.match(line)), None)
+    if heading_idx is None:
+        return "README.md missing required heading: ## 2. Task Flow"
+
+    section_start = heading_idx + 1
+    section_end = len(lines)
+    for i in range(section_start, len(lines)):
+        if SECTION_HEADING_RE.match(lines[i]):
+            section_end = i
+            break
+
+    section_lines = lines[section_start:section_end]
+    first_non_empty = next((line.strip() for line in section_lines if line.strip()), None)
+    expected = f"![Task Flow]({image_name})"
+    if first_non_empty != expected:
+        return (
+            f"{image_name} exists but README.md section '## 2. Task Flow' must start with "
+            f"'{expected}'"
+        )
+    return None
 
 
 def _contains_forbidden_token(text: str) -> str | None:
@@ -558,6 +584,11 @@ def main() -> int:
     for heading in RECOMMENDED_README_SUBHEADINGS:
         if heading not in readme_text:
             warnings.append(f"README.md missing recommended heading: {heading}")
+    task_flow_png = task_path / "task_flow.png"
+    if task_flow_png.exists():
+        task_flow_issue = _validate_task_flow_embed(readme_text, image_name="task_flow.png")
+        if task_flow_issue:
+            failures.append(task_flow_issue)
 
     assets_dir = task_path / "assets"
     if assets_dir.exists():
