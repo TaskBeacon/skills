@@ -551,6 +551,9 @@ def _draw_shape_icon(ax: Any, x: float, y: float, w: float, h: float, item: dict
     sx = base * size_scale
     sy = sx * 0.78
 
+    if shape == "rect" and _is_square_size(item.get("size")):
+        shape = "square"
+
     if shape in {"circle", "ring", "dot"}:
         if shape == "dot":
             radius = sx * 0.20
@@ -581,6 +584,26 @@ def _draw_shape_icon(ax: Any, x: float, y: float, w: float, h: float, item: dict
                 linewidth=line_width,
                 alpha=alpha,
             )
+        ax.add_patch(patch)
+        return
+
+    if shape == "square":
+        half_w = sx * 0.45
+        half_h = half_w * _visual_y_scale_factor(ax)
+        points = [
+            (cx - half_w, cy + half_h),
+            (cx + half_w, cy + half_h),
+            (cx + half_w, cy - half_h),
+            (cx - half_w, cy - half_h),
+        ]
+        patch = Polygon(
+            points,
+            closed=True,
+            facecolor=color,
+            edgecolor=line_color,
+            linewidth=line_width,
+            alpha=alpha,
+        )
         ax.add_patch(patch)
         return
 
@@ -792,6 +815,32 @@ def _size_scale(value: Any, default: float) -> float:
             if 0 < v <= 2.0:
                 return max(0.24, min(0.62, v * 0.42 if v <= 1 else v * 0.24))
     return default
+
+
+def _is_square_size(value: Any) -> bool:
+    if isinstance(value, (list, tuple)) and len(value) >= 2:
+        first = _to_float(value[0])
+        second = _to_float(value[1])
+        if first is None or second is None:
+            return False
+        first = abs(first)
+        second = abs(second)
+        if first <= 0 or second <= 0:
+            return False
+        return abs(first - second) <= max(1e-6, 0.05 * max(first, second))
+    return False
+
+
+def _visual_y_scale_factor(ax: Any) -> float:
+    try:
+        box = ax.get_window_extent()
+        w_px = float(box.width)
+        h_px = float(box.height)
+        if w_px <= 0 or h_px <= 0:
+            return 1.0
+        return w_px / h_px
+    except Exception:  # noqa: BLE001
+        return 1.0
 
 
 def _text_size(value: Any, default: int) -> int:

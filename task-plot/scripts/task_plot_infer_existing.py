@@ -1199,8 +1199,8 @@ def _build_stimulus_example(
                         "height": _extract_text_height(stim.get("height")),
                     }
                 )
-            elif text_type in {"shape", "polygon", "circle"}:
-                token = _shape_token(stim_id, condition)
+            elif text_type in {"shape", "polygon", "circle", "rect", "square"}:
+                token = _rect_token(stim_id, stim) if text_type in {"rect", "square"} else _shape_token(stim_id, condition)
                 if text_type == "circle":
                     circle_token = _circle_token(stim_id, stim)
                     parts.append(circle_token["label"])
@@ -1427,6 +1427,31 @@ def _circle_token(stim_id: str, stim: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _rect_token(stim_id: str, stim: dict[str, Any]) -> dict[str, Any]:
+    sid = (stim_id or "").lower()
+    size = _extract_size_token(stim.get("size"))
+    square_like = _size_token_is_square(size)
+    if "nogo" in sid or "no go" in sid or "no-go" in sid:
+        base_label = "No Go"
+    elif "go" in sid:
+        base_label = "Go"
+    else:
+        base_label = "Square" if square_like else "Rectangle"
+    label = f"{base_label} Square" if square_like else f"{base_label} Rectangle"
+    fill = stim.get("fillColor")
+    line = stim.get("lineColor")
+    return {
+        "kind": "shape",
+        "shape": "rect",
+        "label": label,
+        "color": _color_token(fill),
+        "line_color": _color_token(line),
+        "line_width": _float_or_none(stim.get("lineWidth")) or 1.0,
+        "pos": _extract_pos_token(stim.get("pos")),
+        "size": size,
+    }
+
+
 def _color_token(value: Any) -> str:
     if isinstance(value, str):
         token = value.strip().lower()
@@ -1470,6 +1495,16 @@ def _extract_size_token(value: Any) -> float | list[float] | None:
         if vals:
             return vals
     return None
+
+
+def _size_token_is_square(value: float | list[float] | None) -> bool:
+    if isinstance(value, list) and len(value) >= 2:
+        first = abs(float(value[0]))
+        second = abs(float(value[1]))
+        if first <= 0 or second <= 0:
+            return False
+        return abs(first - second) <= max(1e-6, 0.05 * max(first, second))
+    return False
 
 
 def _extract_text_height(value: Any) -> float | None:
@@ -1840,7 +1875,10 @@ def _build_spec(
 
 
 def _display_condition_label(text: str) -> str:
-    return _cap_label(text)
+    raw = " ".join(str(text).replace("_", " ").replace("-", " ").split())
+    if raw.lower() == "nogo":
+        return "No Go"
+    return _cap_label(raw)
 
 
 def _display_phase_label(text: str) -> str:
@@ -1850,6 +1888,10 @@ def _display_phase_label(text: str) -> str:
         return "Phase"
     if "fix" in low:
         return "Fixation"
+    if "nogo" in low or "no go" in low:
+        if "feedback" in low:
+            return "Feedback"
+        return "No Go"
     if "inter trial" in low or low == "iti" or " iti " in f" {low} ":
         return "ITI"
     if "stop signal" in low or ("stop" in low and "signal" in low):
